@@ -46,7 +46,7 @@ class FrameState:
 
 
 class PhotoLibrary:
-    """Pictures in `photo_dir` described by `photos.json`; each is shown once before any repeats."""
+    """Pictures in `photo_dir` traversed in a persistent shuffled, circular list."""
 
     def __init__(self, photo_dir: Path, font: Path, storage_dir: Path) -> None:
         self._dir = photo_dir
@@ -55,7 +55,9 @@ class PhotoLibrary:
         self._state_path = storage_dir / "photo_frame.state.json"
         self._lock = threading.Lock()
         self._photos: dict[str, Photo] = {}
+        self._deck: list[str] = []
         self._font: ImageFont.FreeTypeFont | None = None
+        self._catalog_mtime = 0.0
         self.state = FrameState()
 
     @property
@@ -63,7 +65,15 @@ class PhotoLibrary:
         return len(self._photos)
 
     def load(self) -> None:
-        catalog = json.loads((self._dir / "photos.json").read_text(encoding="utf-8"))
+        self._load_catalog()
+        self._font = ImageFont.truetype(str(self._font_path), FONT_SIZE)
+        self._load_state()
+
+    def _load_catalog(self) -> None:
+        """Reads photos.json; new pictures are appended to the end of the shuffled list."""
+        catalog_path = self._dir / "photos.json"
+        mtime = catalog_path.stat().st_mtime
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
         photos = {}
         for item in catalog:
             if not (self._dir / item["file"]).is_file():
@@ -71,19 +81,26 @@ class PhotoLibrary:
             taken = date.fromisoformat(item["taken"][:10]) if item.get("taken") else None
             photos[item["file"]] = Photo(item["file"], taken, item.get("place", ""))
         self._photos = photos
-        self._font = ImageFont.truetype(str(self._font_path), FONT_SIZE)
-        self._load_state()
+        self._catalog_mtime = mtime
+        self._load_deck()
+        _LOGGER.info("Photo catalog loaded with %d pictures", len(photos))
 
-    def render_next(self, battery: int | None, charging: bool) -> tuple[bytes, Photo]:
+    def render(self, battery: int | None, charging: bool, direction: int = 1) -> tuple[bytes, Photo]:
+        """Advance one position; -1 moves to the previous photo."""
+        if direction not in (-1, 1):
+            raise ValueError("Photo direction must be -1 or 1")
         with self._lock:
-            photo = self._photos[self._draw()]
+            if (self._dir / "photos.json").stat().st_mtime != self._catalog_mtime:
+                self._load_catalog()
+            photo = self._photos[self._select(direction)]
             image = self._compose(photo, battery, charging)
             out = io.BytesIO()
             image.save(out, format="BMP")
             png = io.BytesIO()
             image.save(png, format="PNG")
-            self.state = FrameState(datetime.now(timezone.utc), battery, charging, photo, png.getvalue())
-            self._save_state()
+            state = FrameState(datetime.now(timezone.utc), battery, charging, photo, png.getvalue())
+            self._save_state(state)
+            self.state = state
             return out.getvalue(), photo
 
     def _compose(self, photo: Photo, battery: int | None, charging: bool) -> Image.Image:
@@ -93,30 +110,40 @@ class PhotoLibrary:
         self._draw_bar(image, photo, battery, charging)
         return image
 
-    def _draw(self) -> str:
-        deck: list[str] = []
+    def _load_deck(self) -> None:
         try:
             deck = json.loads(self._deck_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            pass
-        deck = [name for name in deck if name in self._photos]
-        if not deck:
-            deck = list(self._photos)
-            random.shuffle(deck)
-        name = deck.pop()
+            deck = []
+        if not isinstance(deck, list):
+            deck = []
+        deck = list(dict.fromkeys(name for name in deck if isinstance(name, str) and name in self._photos))
+        additions = [name for name in self._photos if name not in deck]
+        random.shuffle(additions)
+        self._deck = deck + additions
         self._deck_path.parent.mkdir(parents=True, exist_ok=True)
-        self._deck_path.write_text(json.dumps(deck), encoding="utf-8")
-        return name
+        temporary = self._deck_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(self._deck), encoding="utf-8")
+        temporary.replace(self._deck_path)
 
-    def _save_state(self) -> None:
-        state = self.state
+    def _select(self, direction: int) -> str:
+        if not self._deck:
+            raise ValueError("No pictures in the photo catalog")
+        index = -1 if direction == 1 else 0
+        if self.state.photo and self.state.photo.file in self._deck:
+            index = self._deck.index(self.state.photo.file)
+        return self._deck[(index + direction) % len(self._deck)]
+
+    def _save_state(self, state: FrameState) -> None:
         data = {
             "updated": state.updated.isoformat() if state.updated else None,
             "battery": state.battery,
             "charging": state.charging,
             "photo": state.photo.file if state.photo else None,
         }
-        self._state_path.write_text(json.dumps(data), encoding="utf-8")
+        temporary = self._state_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(data), encoding="utf-8")
+        temporary.replace(self._state_path)
 
     def _load_state(self) -> None:
         try:

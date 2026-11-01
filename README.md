@@ -2,9 +2,9 @@
 
 Daily photo frame for the Waveshare ESP32-S3-PhotoPainter (7.3" Spectra 6 e-paper), backed by Home Assistant.
 
-- On battery: around 00:05 every day, or when BOOT or KEY is pressed, the frame wakes, joins Wi-Fi, reports its battery level and asks Home Assistant for a picture. It shows the picture, turns off Wi-Fi and the panel, and goes back to deep sleep. If the update fails it retries an hour later.
-- On USB power: the frame stays awake with Wi-Fi connected and changes the picture, and reports the battery level, every 5 minutes. BOOT or KEY changes the picture immediately. When USB is unplugged it returns to the daily battery schedule.
-- Home Assistant picks a random picture (every picture is shown once before any repeats), draws a status bar along the bottom and returns a 480×800 24-bit BMP.
+- On battery: around 00:05 every day, or when BOOT or KEY is pressed, the frame wakes, joins Wi-Fi, reports its battery level and asks Home Assistant for a picture. KEY and scheduled updates show the next photo; BOOT shows the previous photo. It shows the picture, turns off Wi-Fi and the panel, and goes back to deep sleep. If the update fails it retries an hour later.
+- On USB power: the frame stays awake with Wi-Fi connected and advances to the next picture, and reports the battery level, every 5 minutes. KEY advances immediately; BOOT goes back one photo. When USB is unplugged it returns to the daily battery schedule.
+- Home Assistant traverses a shuffled list of all pictures, draws a status bar along the bottom and returns a 480×800 24-bit BMP. The list wraps at either end and keeps the same order across cycles. Its order and current position are saved across Home Assistant restarts.
 
 The status bar is 40 px of solid white with black, red and green text and icons — no dithering — showing the capture date, the place (when known), and the battery level with an icon. Below 15% the battery turns red; while on USB it shows “充电”.
 
@@ -58,6 +58,19 @@ Put the pictures and a `photos.json` catalog in one directory that Home Assistan
 
 The place shown is the city plus the nearest point of interest or street, at most 7 characters.
 
+### Weekly import of new photos
+
+`tools/weekly/import_new_photos.py` adds new photos to the library on Home Assistant. It reads the Photos smart album `墨水相框人物` (People is any of the family members), keeps camera portrait photos captured after the watermark, scores sharpness and face quality, keeps the best shot of each burst (at most 4 per day, 40 per run), crops around the faces, dithers to the six panel colors, reverse-geocodes places, uploads the BMPs, appends them to `photos.json`, and moves the watermark forward.
+
+```bash
+python3 -m venv ~/.local/share/photopainter/venv
+~/.local/share/photopainter/venv/bin/python -m pip install pillow
+~/.local/share/photopainter/venv/bin/python tools/weekly/import_new_photos.py            # import
+~/.local/share/photopainter/venv/bin/python tools/weekly/import_new_photos.py --dry-run  # preview only
+```
+
+State lives in `~/.local/state/photopainter/`: `config.json` holds the Home Assistant host (`{"remote": "root@<host>", "remote_dir": "<picture directory>", "ssh_options": []}`), `watermark.json` holds the newest capture time already examined, `weekly.log` records each run. The watermark only moves after a verified upload, so a failed run is retried from the same point. Home Assistant picks up the new `photos.json` on the next frame request; new pictures join the end of the shuffled list.
+
 ## Home Assistant
 
 1. Copy `ha/custom_components/photo_frame` to `<config>/custom_components/photo_frame`.
@@ -77,7 +90,7 @@ The place shown is the city plus the nearest point of interest or street, at mos
 
 4. Restart Home Assistant.
 
-Endpoint: `GET /api/photo_frame/next?token=<token>&battery=<0-100>&charging=<0|1>`. It returns `image/bmp`; the `X-Frame-Time` header carries the server’s Unix time, which the frame uses as its clock. Requests with a wrong token get `401`.
+Endpoint: `GET /api/photo_frame/next?token=<token>&battery=<0-100>&charging=<0|1>&direction=<next|previous>`. `direction` defaults to `next`; `previous` goes back one photo. It returns `image/bmp`; the `X-Frame-Time` header carries the server’s Unix time, which the frame uses as its clock. Requests with a wrong token get `401`; an invalid direction gets `400`.
 
 The status bar font is [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) 12px (SIL OFL 1.1, see `fonts/OFL.txt`), rendered at 24 px without anti-aliasing.
 
