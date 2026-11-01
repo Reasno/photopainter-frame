@@ -60,16 +60,19 @@ The place shown is the city plus the nearest point of interest or street, at mos
 
 ### Weekly import of new photos
 
-`tools/weekly/import_new_photos.py` adds new photos to the library on Home Assistant. It reads the Photos smart album `墨水相框人物` (People is any of the family members), keeps camera portrait photos captured after the watermark, scores sharpness and face quality, keeps the best shot of each burst (at most 4 per day, 40 per run), crops around the faces, dithers to the six panel colors, reverse-geocodes places, uploads the BMPs, appends them to `photos.json`, and moves the watermark forward.
+`tools/weekly/import_new_photos.py` adds new photos to the library on Home Assistant. Quality comes before quantity: a week may add only a few pictures, or none.
+
+- `prepare` reads the Photos smart album `墨水相框人物` (People is any of the family members), keeps camera portrait photos captured after the watermark, and drops blurry, badly exposed, or small-face shots. It keeps only the best shot of each burst or near-identical scene, at most 3 per day and 20 per run. It then crops around the faces, dithers to the six panel colors, reverse-geocodes places, and writes a review set (BMPs, `entries.json`, `contact_sheet.jpg`) to `~/.local/state/photopainter/review/`. Delete a BMP there to leave that picture out.
+- `publish` uploads the remaining BMPs, appends them to `photos.json`, verifies the upload, and moves the watermark forward.
 
 ```bash
 python3 -m venv ~/.local/share/photopainter/venv
 ~/.local/share/photopainter/venv/bin/python -m pip install pillow
-~/.local/share/photopainter/venv/bin/python tools/weekly/import_new_photos.py            # import
-~/.local/share/photopainter/venv/bin/python tools/weekly/import_new_photos.py --dry-run  # preview only
+~/.local/share/photopainter/venv/bin/python tools/weekly/import_new_photos.py prepare
+~/.local/share/photopainter/venv/bin/python tools/weekly/import_new_photos.py publish
 ```
 
-State lives in `~/.local/state/photopainter/`: `config.json` holds the Home Assistant host (`{"remote": "root@<host>", "remote_dir": "<picture directory>", "ssh_options": []}`), `watermark.json` holds the newest capture time already examined, `weekly.log` records each run. The watermark only moves after a verified upload, so a failed run is retried from the same point. Home Assistant picks up the new `photos.json` on the next frame request; new pictures join the end of the shuffled list.
+State lives in `~/.local/state/photopainter/`: `config.json` holds the Home Assistant host (`{"remote": "root@<host>", "remote_dir": "<picture directory>", "ssh_options": []}`), `watermark.json` holds the newest capture time already examined, `weekly.log` records each run. The watermark only moves after a verified `publish`, so a failed run is retried from the same point. Home Assistant picks up the new `photos.json` on the next frame request; new pictures join the end of the shuffled list.
 
 ## Home Assistant
 
