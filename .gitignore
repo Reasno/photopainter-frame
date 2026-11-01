@@ -1,0 +1,16 @@
+# Pictures, picture catalogs and geocoded places are personal data.
+PhotoPainter/
+*.zip
+*.bmp
+photos.json
+tools/places.json
+
+# Firmware build output and local secrets
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/main/frame_secrets.h
+
+__pycache__/
+.DS_Store
