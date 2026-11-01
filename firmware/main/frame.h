@@ -55,6 +55,7 @@ void board_prepare_sleep(void);
 
 bool pmu_init(void);
 battery_status_t pmu_battery(void);
+bool pmu_usb(void);
 void pmu_sleep_rails(void);
 
 bool epd_init(void);
@@ -62,6 +63,8 @@ bool epd_init(void);
 bool epd_show_portrait_bmp(const uint8_t *bmp, size_t len);
 void epd_sleep(void);
 
+// Connects to Wi-Fi, or confirms the existing connection.
+bool net_connect(void);
 // Returns a heap buffer with the BMP (caller frees) or NULL.
 uint8_t *net_fetch_photo(const battery_status_t *battery, size_t *out_len);
 void net_stop(void);

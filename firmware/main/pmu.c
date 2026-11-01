@@ -79,6 +79,13 @@ bool pmu_init(void)
     return true;
 }
 
+bool pmu_usb(void)
+{
+    int s1 = pmu_read(REG_STATUS1);
+    int s2 = pmu_read(REG_STATUS2);
+    return s1 >= 0 && s2 >= 0 && (s1 & (1 << 5)) && !(s2 & (1 << 3));
+}
+
 battery_status_t pmu_battery(void)
 {
     battery_status_t status = {.percent = -1};

@@ -39,6 +39,14 @@ void board_init(void)
         }
     }
 
+    // BOOT and KEY buttons, active low.
+    gpio_config_t buttons = {
+        .pin_bit_mask = (1ULL << PIN_BOOT) | (1ULL << PIN_KEY),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    gpio_config(&buttons);
+
     // Keep the speaker amplifier off.
     gpio_config_t pa = {.pin_bit_mask = 1ULL << PIN_AUDIO_PA, .mode = GPIO_MODE_OUTPUT};
     gpio_config(&pa);

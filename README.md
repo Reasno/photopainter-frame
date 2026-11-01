@@ -2,9 +2,9 @@
 
 Daily photo frame for the Waveshare ESP32-S3-PhotoPainter (7.3" Spectra 6 e-paper), backed by Home Assistant.
 
-- Around 00:05 every day, or when BOOT or KEY is pressed, the frame wakes, joins Wi-Fi, reports its battery level and asks Home Assistant for a picture.
+- On battery: around 00:05 every day, or when BOOT or KEY is pressed, the frame wakes, joins Wi-Fi, reports its battery level and asks Home Assistant for a picture. It shows the picture, turns off Wi-Fi and the panel, and goes back to deep sleep. If the update fails it retries an hour later.
+- On USB power: the frame stays awake with Wi-Fi connected and changes the picture, and reports the battery level, every 5 minutes. BOOT or KEY changes the picture immediately. When USB is unplugged it returns to the daily battery schedule.
 - Home Assistant picks a random picture (every picture is shown once before any repeats), draws a status bar along the bottom and returns a 480×800 24-bit BMP.
-- The frame shows the picture, turns off Wi-Fi and the panel, and goes back to deep sleep. If the update fails it retries an hour later.
 
 The status bar is 40 px of solid white with black, red and green text and icons — no dithering — showing the capture date, the place (when known), and the battery level with an icon. Below 15% the battery turns red; while on USB it shows “充电”.
 
@@ -97,7 +97,8 @@ idf.py -p /dev/cu.usbmodem1101 flash monitor
 
 ### Power
 
-- Wi-Fi is on only while a picture is being fetched (about 5–10 s), then shut down before the panel refresh.
+- On battery, Wi-Fi is on only while a picture is being fetched (about 5–10 s), then shut down before the panel refresh. On USB power Wi-Fi stays on.
+- USB power is detected from the AXP2101 VBUS status at wake and checked every 5 s while awake.
 - The e-paper panel is sent its deep-sleep command after the refresh (about 25 s).
 - Before deep sleep the AXP2101 enters its sleep mode; unused rails, the panel rail (ALDO4) and the audio rail (ALDO3) are switched off, the speaker amplifier and LEDs are held off, and unused RTC pads are isolated.
 - Wake sources: the ESP32-S3 timer (next 00:05 local time, China Standard Time) and the BOOT/KEY buttons (EXT1, active low). The timer runs on the internal RC oscillator, so the daily wake can drift by a few minutes; each successful update resets the clock from Home Assistant.

@@ -65,8 +65,11 @@ static void command(uint8_t cmd, const uint8_t *data, size_t len)
         command((c), d_, sizeof(d_));                 \
     } while (0)
 
-bool epd_init(void)
+static bool epd_setup_bus(void)
 {
+    if (s_spi) {
+        return true;
+    }
     gpio_config_t out = {
         .pin_bit_mask = (1ULL << PIN_EPD_DC) | (1ULL << PIN_EPD_CS) | (1ULL << PIN_EPD_RST),
         .mode = GPIO_MODE_OUTPUT,
@@ -97,6 +100,15 @@ bool epd_init(void)
     s_buf = heap_caps_malloc(EPD_BUF_SIZE, MALLOC_CAP_SPIRAM);
     if (!s_buf) {
         ESP_LOGE(TAG, "no framebuffer");
+        return false;
+    }
+    return true;
+}
+
+// Resets the panel and sends the init sequence; called before every refresh.
+bool epd_init(void)
+{
+    if (!epd_setup_bus()) {
         return false;
     }
 
