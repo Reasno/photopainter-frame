@@ -18,8 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PhotoFrameView(HomeAssistantView):
-    """GET /api/photo_frame/next?token=…&battery=78&charging=0 returns a 480x800 24-bit BMP.
+    """GET /api/photo_frame/next?token=…&direction=next returns a 480x800 24-bit BMP.
 
+    Direction is next (default) or previous; battery and charging describe the frame.
     The X-Frame-Time response header carries the current Unix time so the frame can set its clock.
     """
 
@@ -35,12 +36,17 @@ class PhotoFrameView(HomeAssistantView):
         supplied = request.query.get("token", "")
         if not hmac.compare_digest(supplied, self._token):
             return web.Response(status=401)
+        direction = request.query.get("direction", "next")
+        if direction not in ("next", "previous"):
+            return web.Response(status=400, text="direction must be next or previous")
         battery = _parse_battery(request.query.get("battery"))
         charging = request.query.get("charging") == "1"
         hass = request.app[KEY_HASS]
-        body, photo = await hass.async_add_executor_job(self._library.render_next, battery, charging)
+        body, photo = await hass.async_add_executor_job(
+            self._library.render, battery, charging, -1 if direction == "previous" else 1
+        )
         async_dispatcher_send(hass, SIGNAL_UPDATED)
-        _LOGGER.info("Frame picture %s (battery=%s charging=%s)", photo.file, battery, charging)
+        _LOGGER.info("Frame picture %s (direction=%s battery=%s charging=%s)", photo.file, direction, battery, charging)
         return web.Response(
             body=body,
             content_type="image/bmp",

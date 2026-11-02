@@ -86,12 +86,13 @@ static esp_err_t on_http_event(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
-uint8_t *net_fetch_photo(const battery_status_t *battery, size_t *out_len)
+uint8_t *net_fetch_photo(const battery_status_t *battery, photo_direction_t direction, size_t *out_len)
 {
     *out_len = 0;
     char url[256];
-    snprintf(url, sizeof(url), "%s?token=%s&battery=%d&charging=%d", FRAME_HA_URL, FRAME_HA_TOKEN, battery->percent,
-             battery->charging || battery->usb ? 1 : 0);
+    snprintf(url, sizeof(url), "%s?token=%s&battery=%d&charging=%d&direction=%s", FRAME_HA_URL, FRAME_HA_TOKEN,
+             battery->percent, battery->charging || battery->usb ? 1 : 0,
+             direction == PHOTO_PREVIOUS ? "previous" : "next");
     esp_http_client_config_t conf = {
         .url = url,
         .timeout_ms = 20000,

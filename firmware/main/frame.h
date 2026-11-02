@@ -48,6 +48,11 @@ typedef struct {
     bool usb;
 } battery_status_t;
 
+typedef enum {
+    PHOTO_PREVIOUS = -1,
+    PHOTO_NEXT = 1,
+} photo_direction_t;
+
 i2c_master_bus_handle_t board_i2c(void);
 void board_init(void);
 void board_leds_off(void);
@@ -66,5 +71,5 @@ void epd_sleep(void);
 // Connects to Wi-Fi, or confirms the existing connection.
 bool net_connect(void);
 // Returns a heap buffer with the BMP (caller frees) or NULL.
-uint8_t *net_fetch_photo(const battery_status_t *battery, size_t *out_len);
+uint8_t *net_fetch_photo(const battery_status_t *battery, photo_direction_t direction, size_t *out_len);
 void net_stop(void);

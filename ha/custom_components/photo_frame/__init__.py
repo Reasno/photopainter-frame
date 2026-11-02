@@ -1,4 +1,4 @@
-"""Serve random PhotoPainter pictures with a status bar rendered on Home Assistant."""
+"""Serve a shuffled PhotoPainter sequence with a status bar rendered on Home Assistant."""
 
 from __future__ import annotations
 

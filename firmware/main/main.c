@@ -2,6 +2,7 @@
 // On battery: once a day around midnight, or when BOOT/KEY is pressed, fetch one picture from
 // Home Assistant, show it, and return to deep sleep.
 // On USB power: stay awake with Wi-Fi on, change the picture every 5 minutes and on BOOT/KEY.
+// KEY and scheduled updates advance the shuffled list; BOOT moves to the previous photo.
 
 #include <sys/time.h>
 #include <time.h>
@@ -29,7 +30,8 @@ static const char *TAG = "frame";
 
 typedef enum {
     WAIT_TIMEOUT,
-    WAIT_BUTTON,
+    WAIT_NEXT,
+    WAIT_PREVIOUS,
     WAIT_UNPLUGGED,
 } wait_result_t;
 
@@ -51,12 +53,12 @@ static uint64_t seconds_until_next_wake(void)
 }
 
 // Fetches and shows one picture. Wi-Fi is turned off before the panel refresh unless keep_wifi is set.
-static bool update_picture(const battery_status_t *battery, bool keep_wifi)
+static bool update_picture(const battery_status_t *battery, bool keep_wifi, photo_direction_t direction)
 {
     size_t len = 0;
     uint8_t *photo = NULL;
     if (net_connect()) {
-        photo = net_fetch_photo(battery, &len);
+        photo = net_fetch_photo(battery, direction, &len);
     }
     if (!keep_wifi) {
         net_stop();
@@ -86,9 +88,10 @@ static wait_result_t wait_on_usb(int64_t until_us)
         if (!button_down()) {
             armed = true;
         } else if (armed) {
+            gpio_num_t pin = gpio_get_level(PIN_BOOT) == 0 ? PIN_BOOT : PIN_KEY;
             vTaskDelay(pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS));
-            if (button_down()) {
-                return WAIT_BUTTON;
+            if (gpio_get_level(pin) == 0) {
+                return pin == PIN_BOOT ? WAIT_PREVIOUS : WAIT_NEXT;
             }
         }
         if (esp_timer_get_time() >= next_usb_check) {
@@ -105,6 +108,10 @@ static wait_result_t wait_on_usb(int64_t until_us)
 static void deep_sleep(uint64_t seconds)
 {
     net_stop();
+    // A held button must be released before enabling level-triggered wake-up.
+    while (button_down()) {
+        vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS));
+    }
     board_prepare_sleep();
     pmu_sleep_rails();
     ESP_LOGI(TAG, "deep sleep for %llu s", (unsigned long long)seconds);
@@ -124,12 +131,14 @@ void app_main(void)
     }
 
     esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    uint64_t wake_pins = cause == ESP_SLEEP_WAKEUP_EXT1 ? esp_sleep_get_ext1_wakeup_status() : 0;
+    photo_direction_t direction = (wake_pins & (1ULL << PIN_BOOT)) ? PHOTO_PREVIOUS : PHOTO_NEXT;
     ESP_LOGI(TAG, "wake cause %d", cause);
 
     board_init();
     pmu_init();
     battery_status_t battery = pmu_battery();
-    bool shown = update_picture(&battery, battery.usb);
+    bool shown = update_picture(&battery, battery.usb, direction);
 
     if (battery.usb) {
         ESP_LOGI(TAG, "USB power: Wi-Fi stays on, new picture every %d s", USB_INTERVAL_S);
@@ -140,7 +149,8 @@ void app_main(void)
                 break;
             }
             battery = pmu_battery();
-            shown = update_picture(&battery, true);
+            direction = result == WAIT_PREVIOUS ? PHOTO_PREVIOUS : PHOTO_NEXT;
+            shown = update_picture(&battery, true, direction);
         }
     }
 
